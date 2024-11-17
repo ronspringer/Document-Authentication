@@ -17,13 +17,10 @@ import uuid
 from django.urls import reverse
 import hashlib
 from django.http import JsonResponse
-from PyPDF2 import PdfReader, PdfWriter
 from .models import Document
-from pdfplumber import PDF
 from django.shortcuts import render
 from PIL import Image
 import pytesseract
-from pdf2image import convert_from_bytes
 from io import BytesIO
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 from .utils import extract_text_from_pdf
@@ -98,34 +95,42 @@ def verify_document(request):
         except Exception as e:
             return JsonResponse({"error": str(e)}, status=400)
 
-    # GET method for rendering verification status in template
     elif request.method == "GET":
         try:
-            document_id = request.GET.get("id")  # Get document ID from query parameters
-            use_ocr = request.GET.get("use_ocr", "false").lower() == "true"  # Check if OCR is selected
+            # Get document ID from query parameters
+            document_id = request.GET.get("id")
 
+            # Retrieve the document or return 404 if not found
             document = get_object_or_404(Document, document_id=document_id)
 
-            # Perform basic document verification or OCR-based verification
-            if use_ocr:
-                verification_status = "OCR Verification Passed" if perform_ocr_verification(document.pdf_file, document.content) else "OCR Verification Failed"
-            else:
-                public_key = load_pem_public_key(document.public_key, backend=default_backend())
-                is_verified = verify_signature(document.content, document.signature, public_key)
-                verification_status = "Authentic and Untampered" if is_verified else "Document Verification Failed"
+            # Load the public key from the document
+            public_key = load_pem_public_key(document.public_key, backend=default_backend())
 
+            # Recompute the document's current content hash (after QR embedding)
+            with open(document.pdf_file.path, "rb") as pdf_file:
+                current_content = pdf_file.read()
+
+            # Verify the document's signature
+            is_verified = verify_signature(current_content, document.signature, public_key)
+            verification_status = "Authentic and Untampered" if is_verified else "Document Verification Failed"
+
+            # Render the template with verification status
             return render(
                 request,
                 "verify_document.html",
                 {"document_id": document.document_id, "status": verification_status},
             )
+
         except Document.DoesNotExist:
+            # Render an error message if the document doesn't exist
             return render(request, "verify_document.html", {"error": "Document not found."})
         except Exception as e:
-            return render(request, "verify_document.html", {"error": "Document Verification Failed"})
+            # Catch any other exceptions and render a generic error message
+            return render(request, "verify_document.html", {"error": f"Document Verification Failed"})
 
     return JsonResponse({"error": "Invalid request method."}, status=400)
 
+# Document signing view
 # Document signing view
 @api_view(['POST'])
 def create_signed_document(request):
@@ -143,7 +148,7 @@ def create_signed_document(request):
             if len(document_content) == 0:
                 return JsonResponse({"error": "Uploaded file is empty"}, status=400)
 
-            # Reset file pointer after reading for tex  t extraction
+            # Reset file pointer after reading for text extraction
             uploaded_file.seek(0)
 
             # Extract text if it's a PDF (optional step for OCR verification)
@@ -187,9 +192,22 @@ def create_signed_document(request):
             # Generate a verification URL with a QR code
             verification_url = f"http://localhost:8000/verify?id={document.document_id}"
             document_path = document.pdf_file.path
+
+            # Embed QR code and verification link in the document PDF
             embed_qr_code_and_link(document_path, verification_url, document_path)
 
-            return JsonResponse({"message": "Document signed and saved successfully!", "document_id": document_id})
+            # After embedding the QR code, sign the document again, ensuring it's signed and tamper-proof
+            # Re-read the document to apply the signature with QR embedded
+            with open(document_path, 'rb') as signed_file:
+                signed_document_content = signed_file.read()
+                
+            signature_after_qr = sign_document(signed_document_content, private_key)
+            
+            # Update the document with the new signature after QR embedding
+            document.signature = signature_after_qr
+            document.save()  # Save the updated signature
+
+            return JsonResponse({"message": "Document signed, QR code embedded, and saved successfully!", "document_id": document_id})
 
         except ValueError as ve:
             return JsonResponse({"error": f"Error processing the PDF: {str(ve)}"}, status=400)
@@ -198,7 +216,6 @@ def create_signed_document(request):
             return JsonResponse({"error": f"An error occurred: {str(e)}"}, status=500)
     else:
         return JsonResponse({"error": "Invalid request method"}, status=400)
-
 
 
 # Document download view
@@ -227,16 +244,6 @@ def list_documents(request):
         for doc in documents
     ]
     return JsonResponse(document_list, safe=False)
-
-
-
-def upload_document(request):
-    if request.method == 'POST':
-        uploaded_file = request.FILES['document']
-        document = Document.objects.create(pdf_file=uploaded_file)
-        document.save()
-        return JsonResponse({'message': 'Document uploaded successfully.'})
-    return JsonResponse({'error': 'Invalid request'}, status=400)
 
 
 # Login view
