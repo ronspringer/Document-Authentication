@@ -1,28 +1,10 @@
-// App.js
-import React, { useState } from 'react';
-import LoginForm from './components/LoginForm';
-import UploadDocument from './components/UploadDocument';
-import Verification from './components/Verification';
-import DocumentDownloadComponent from './components/DocumentDownloadComponent';
+import React from 'react';
+import DocumentManager from './components/DocumentManager';
 
 const App = () => {
-  
   return (
-    <div>
-      <h1>Document Authentication</h1>
-
-        <div>
-          <UploadDocument />
-        </div>
-
-      <h1>Verify Document</h1>
-      <div>
-          <Verification />
-        </div>
-      
-      <div>
-          <DocumentDownloadComponent />
-      </div>
+    <div className="bg-light py-5">
+      <DocumentManager />
     </div>
   );
 };

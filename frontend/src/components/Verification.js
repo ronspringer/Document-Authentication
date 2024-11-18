@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import AxiosInstance from './axios'
+import { TextField, Button, FormControlLabel, Checkbox, Box, Typography, Alert } from '@mui/material';
+import AxiosInstance from './axios';
 
 const Verification = () => {
   const [docId, setDocId] = useState('');
@@ -32,32 +33,58 @@ const Verification = () => {
   };
 
   return (
-    <div>
-      <input
-        type="text"
+    <Box sx={{ maxWidth: 400, margin: 'auto', padding: 2 }}>
+      <Typography variant="h6" gutterBottom>
+        Document Verification
+      </Typography>
+
+      <TextField
+        label="Document ID"
+        fullWidth
+        variant="outlined"
         value={docId}
         onChange={(e) => setDocId(e.target.value)}
-        placeholder="Enter Document ID"
+        sx={{ marginBottom: 2 }}
       />
-      <input
-        type="file"
-        onChange={(e) => setFile(e.target.files[0])}
-        accept="application/pdf"
+      <Box mb={2}>
+        <Button variant="contained" component="label">
+          Select File
+          <input type="file" hidden onChange={(e) => setFile(e.target.files[0])} />
+        </Button>
+        {file && <Typography mt={1}>{file.name}</Typography>}
+      </Box>
+
+      <FormControlLabel
+        control={
+          <Checkbox
+            checked={useOcr}
+            onChange={(e) => setUseOcr(e.target.checked)}
+            color="primary"
+          />
+        }
+        label="Use Optical Character Recognition (OCR) for Verification"
+        sx={{ marginBottom: 2 }}
       />
 
-      <label>
-        Use OCR for Verification:
-        <input
-          type="checkbox"
-          checked={useOcr}
-          onChange={(e) => setUseOcr(e.target.checked)} // Toggle OCR option
-        />
-      </label>
+      <Button
+        variant="contained"
+        color="success"
+        fullWidth
+        onClick={onVerify}
+        sx={{ marginBottom: 2 }}
+      >
+        Verify Document
+      </Button>
 
-      <button onClick={onVerify}>Verify Document</button>
-
-      {verificationResult && <p>{verificationResult}</p>}
-    </div>
+      {verificationResult && (
+        <Alert
+          severity={verificationResult.startsWith('Verification failed') ? 'error' : 'success'}
+          sx={{ marginTop: 2 }}
+        >
+          {verificationResult}
+        </Alert>
+      )}
+    </Box>
   );
 };
 

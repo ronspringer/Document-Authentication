@@ -24,6 +24,8 @@ import pytesseract
 from io import BytesIO
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 from .utils import extract_text_from_pdf
+from rest_framework.pagination import PageNumberPagination
+from rest_framework.response import Response
 
 def validate_uploaded_file(uploaded_file, allowed_extensions=None):
     """
@@ -231,19 +233,26 @@ def download_document(request, document_id):
     return FileResponse(document.pdf_file, as_attachment=True, filename=f"{document_name}.pdf")
 
 
-# List documents view
+class DocumentPagination(PageNumberPagination):
+    page_size = 10  # Number of documents per page
+    page_size_query_param = 'page_size'
+    max_page_size = 100
+
 @api_view(['GET'])
 def list_documents(request):
     documents = Document.objects.all()
+    paginator = DocumentPagination()
+    result_page = paginator.paginate_queryset(documents, request)
+    
     document_list = [
         {
-            "document_id": doc.id,  # Use document_id
-            "document_name": doc.document_name,  # Include document_name
-            "download_url": request.build_absolute_uri(reverse('download_document', args=[doc.document_id]))  # Generate URL for downloading
+            "document_id": doc.id,
+            "document_name": doc.document_name,
+            "download_url": request.build_absolute_uri(reverse('download_document', args=[doc.id])),
         }
-        for doc in documents
+        for doc in result_page
     ]
-    return JsonResponse(document_list, safe=False)
+    return paginator.get_paginated_response(document_list)
 
 
 # Login view
