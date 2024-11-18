@@ -48,8 +48,8 @@ const DocumentDownloadComponent = () => {
 
   return (
     <Box>
-      {loading && <Typography>Loading...</Typography>}
       <Box sx={{ maxWidth: 400, margin: 'auto', padding: 2 }}>
+        {loading && <Typography>Loading...</Typography>}
         <Typography variant="h6" gutterBottom>
         Download Documents
         </Typography>
