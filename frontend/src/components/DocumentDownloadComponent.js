@@ -49,10 +49,10 @@ const DocumentDownloadComponent = () => {
   return (
     <Box>
       <Box sx={{ maxWidth: 400, margin: 'auto', padding: 2 }}>
-        {loading && <Typography>Loading...</Typography>}
         <Typography variant="h6" gutterBottom>
         Download Documents
         </Typography>
+        {loading && <Typography>Loading...</Typography>}
       </Box>
       <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
 
