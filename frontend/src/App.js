@@ -3,7 +3,7 @@ import DocumentManager from './components/DocumentManager';
 
 const App = () => {
   return (
-    <div className="bg-light py-5">
+    <div>
       <DocumentManager />
     </div>
   );
