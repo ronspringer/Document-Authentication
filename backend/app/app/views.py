@@ -1,5 +1,8 @@
+from django.contrib.auth.models import User
+import json
 from django.shortcuts import get_object_or_404
-from django.http import JsonResponse, FileResponse
+from django.http import JsonResponse, HttpResponse, FileResponse
+from django.views.decorators.http import require_http_methods
 from .models import Document
 from .digital_signature import verify_signature, sign_document
 from .qr_code import embed_qr_code_and_link
@@ -16,14 +19,68 @@ from django.contrib.auth import authenticate, login
 import uuid
 from django.urls import reverse
 import hashlib
-from django.http import JsonResponse
-from .models import Document
 from django.shortcuts import render
 import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 from .utils import extract_text_from_pdf, extract_text_from_image
 from rest_framework.pagination import PageNumberPagination
-from rest_framework.response import Response
+
+def create_user(request):
+    if request.method == "POST":
+        data = json.loads(request.body)
+        first_name = data.get("first_name", "")
+        last_name = data.get("last_name", "")
+        email = data.get("email", "")
+        username = data.get("username", "")
+        password = data.get("password", "")
+
+        # Validation
+        if User.objects.filter(username=username).exists():
+            return JsonResponse({"error": "Username already exists."}, status=400)
+
+        if User.objects.filter(email=email).exists():
+            return JsonResponse({"error": "Email already exists."}, status=400)
+
+        # Create user
+        user = User.objects.create_user(
+            username=username,
+            password=password,
+            first_name=first_name,
+            last_name=last_name,
+            email=email,
+        )
+        return JsonResponse({"message": "User created successfully."}, status=201)
+    return JsonResponse({"error": "Invalid request method."}, status=405)
+
+
+@require_http_methods(["GET"])
+def list_users(request):
+    users = User.objects.values("id", "first_name", "last_name", "email", "username")
+    return JsonResponse(list(users), safe=False)
+
+
+@require_http_methods(["PUT"])
+def update_user(request, user_id):
+    try:
+        data = json.loads(request.body)
+        user = User.objects.get(pk=user_id)
+
+        user.first_name = data.get("first_name", user.first_name)
+        user.last_name = data.get("last_name", user.last_name)
+        user.email = data.get("email", user.email)
+        user.username = data.get("username", user.username)
+        password = data.get("password")
+
+        if password:
+            user.set_password(password)
+
+        user.save()
+        return JsonResponse({"message": "User updated successfully."})
+    except User.DoesNotExist:
+        return JsonResponse({"error": "User not found."}, status=404)
+    except Exception as e:
+        return JsonResponse({"error": str(e)}, status=400)
+    
 
 def validate_uploaded_file(uploaded_file, allowed_extensions=None):
     """
@@ -246,18 +303,17 @@ def list_documents(request):
 
 
 # Login view
-class LoginView(APIView):
-    permission_classes = [AllowAny]
-    authentication_classes = [BasicAuthentication]
-
-    def post(self, request, *args, **kwargs):
-        username = request.data.get('username')
-        password = request.data.get('password')
+def login_view(request):
+    if request.method == 'POST':
+        data = json.loads(request.body)
+        username = data.get('username')
+        password = data.get('password')
 
         user = authenticate(request, username=username, password=password)
-        
         if user is not None:
             login(request, user)
-            return Response({"message": "Login successful"})
+            return JsonResponse({'message': 'Login successful'})
         else:
-            return Response({"message": "Invalid credentials"}, status=400)
+            return JsonResponse({'error': 'Invalid credentials'}, status=401)
+
+    return JsonResponse({'error': 'Invalid request'}, status=400)

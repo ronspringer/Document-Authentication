@@ -30,7 +30,7 @@ const DocumentManager = () => {
   };
 
   return (
-    <Box sx={{ width: '100%', bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2, mt: 5, p: 2 }}>
+    <Box sx={{ width: '98%', bgcolor: 'background.paper', boxShadow: 3, borderRadius: 2, mt: 5, p: 2 }}>
       <Typography variant="h4" align="center" gutterBottom>
         Document Authentication
       </Typography>
