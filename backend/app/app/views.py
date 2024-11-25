@@ -1,5 +1,5 @@
 from django.shortcuts import get_object_or_404
-from django.http import JsonResponse, HttpResponse, FileResponse
+from django.http import JsonResponse, FileResponse
 from .models import Document
 from .digital_signature import verify_signature, sign_document
 from .qr_code import embed_qr_code_and_link
@@ -19,11 +19,9 @@ import hashlib
 from django.http import JsonResponse
 from .models import Document
 from django.shortcuts import render
-from PIL import Image
 import pytesseract
-from io import BytesIO
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
-from .utils import extract_text_from_pdf
+from .utils import extract_text_from_pdf, extract_text_from_image
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 
@@ -39,14 +37,6 @@ def validate_uploaded_file(uploaded_file, allowed_extensions=None):
         raise ValueError("Uploaded file is empty.")
 
     return True
-
-
-def extract_text_from_image(image_file):
-    """
-    Extract text from an image file using OCR.
-    """
-    image = Image.open(BytesIO(image_file.read()))
-    return pytesseract.image_to_string(image)
 
 def perform_ocr_verification(uploaded_file, stored_text_content):
     """
