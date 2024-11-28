@@ -2,7 +2,6 @@ from PyPDF2 import PdfReader
 from io import BytesIO
 import pytesseract
 from PIL import Image, ImageEnhance, ImageFilter
-import cv2
 import numpy as np
 
 def extract_text_from_pdf(file):

@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from rest_framework.permissions import AllowAny
 from rest_framework.authentication import BasicAuthentication
 from rest_framework.response import Response
-from rest_framework.decorators import api_view
+from rest_framework.decorators import api_view, permission_classes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -24,7 +24,13 @@ import pytesseract
 pytesseract.pytesseract.tesseract_cmd = r'C:\Program Files\Tesseract-OCR\tesseract.exe'
 from .utils import extract_text_from_pdf, extract_text_from_image
 from rest_framework.pagination import PageNumberPagination
+from django.contrib.auth.decorators import login_required
 
+from rest_framework_simplejwt.tokens import RefreshToken
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
+
+# Create a new user
 def create_user(request):
     if request.method == "POST":
         data = json.loads(request.body)
@@ -34,14 +40,14 @@ def create_user(request):
         username = data.get("username", "")
         password = data.get("password", "")
 
-        # Validation
+        # Validation checks for username and email uniqueness
         if User.objects.filter(username=username).exists():
             return JsonResponse({"error": "Username already exists."}, status=400)
 
         if User.objects.filter(email=email).exists():
             return JsonResponse({"error": "Email already exists."}, status=400)
 
-        # Create user
+        # Create user using the data
         user = User.objects.create_user(
             username=username,
             password=password,
@@ -53,18 +59,24 @@ def create_user(request):
     return JsonResponse({"error": "Invalid request method."}, status=405)
 
 
+
+# List all users with basic details
 @require_http_methods(["GET"])
 def list_users(request):
+    # Retrieves users with only relevant fields: ID, name, email, and username
     users = User.objects.values("id", "first_name", "last_name", "email", "username")
     return JsonResponse(list(users), safe=False)
 
 
-@require_http_methods(["PUT"])
+
+@api_view(['PUT'])
+@permission_classes([IsAuthenticated])
 def update_user(request, user_id):
     try:
         data = json.loads(request.body)
         user = User.objects.get(pk=user_id)
 
+        # Update user attributes with the new data from request
         user.first_name = data.get("first_name", user.first_name)
         user.last_name = data.get("last_name", user.last_name)
         user.email = data.get("email", user.email)
@@ -82,24 +94,31 @@ def update_user(request, user_id):
         return JsonResponse({"error": str(e)}, status=400)
     
 
+# Helper function to validate uploaded files
 def validate_uploaded_file(uploaded_file, allowed_extensions=None):
     """
     Validate the uploaded file type and size.
     """
     allowed_extensions = allowed_extensions or ['pdf', 'png', 'jpg', 'jpeg']
+    # Check file type based on extension
     if not uploaded_file.name.lower().endswith(tuple(allowed_extensions)):
         raise ValueError(f"Unsupported file type. Allowed extensions: {allowed_extensions}")
 
+    # Check if the file is empty
     if uploaded_file.size == 0:
         raise ValueError("Uploaded file is empty.")
 
     return True
 
+
+# Perform OCR verification of document
 def perform_ocr_verification(uploaded_file, stored_text_content):
     """
     Perform OCR verification for an uploaded file against stored content.
     """
     validate_uploaded_file(uploaded_file, allowed_extensions=['pdf', 'png', 'jpg', 'jpeg'])
+    
+    # Depending on file type, use OCR to extract text
     if uploaded_file.name.lower().endswith(('png', 'jpg', 'jpeg')):
         extracted_text = extract_text_from_image(uploaded_file)
     elif uploaded_file.name.lower().endswith('pdf'):
@@ -107,11 +126,11 @@ def perform_ocr_verification(uploaded_file, stored_text_content):
     else:
         raise ValueError("Unsupported file format for OCR verification.")
     
-    # Compare the extracted text with the stored text content
+    # Compare the extracted text with stored content for verification
     return extracted_text.strip() == stored_text_content.strip()
 
 
-# Updated verify_document view
+# Document verification view
 def verify_document(request):
     if request.method == "POST":
         try:
@@ -146,24 +165,19 @@ def verify_document(request):
 
     elif request.method == "GET":
         try:
-            # Get document ID from query parameters
             document_id = request.GET.get("id")
 
-            # Retrieve the document or return 404 if not found
+            # Retrieve document for verification
             document = get_object_or_404(Document, document_id=document_id)
 
-            # Load the public key from the document
             public_key = load_pem_public_key(document.public_key, backend=default_backend())
-
-            # Recompute the document's current content hash (after QR embedding)
+            # Recompute content hash for verification
             with open(document.pdf_file.path, "rb") as pdf_file:
                 current_content = pdf_file.read()
 
-            # Verify the document's signature
             is_verified = verify_signature(current_content, document.signature, public_key)
             verification_status = "Authentic and Untampered" if is_verified else "Document Verification Failed"
 
-            # Render the template with verification status
             return render(
                 request,
                 "verify_document.html",
@@ -171,17 +185,16 @@ def verify_document(request):
             )
 
         except Document.DoesNotExist:
-            # Render an error message if the document doesn't exist
             return render(request, "verify_document.html", {"error": "Document not found."})
         except Exception as e:
-            # Catch any other exceptions and render a generic error message
             return render(request, "verify_document.html", {"error": f"Document Verification Failed"})
 
     return JsonResponse({"error": "Invalid request method."}, status=400)
 
-# Document signing view
+
 # Document signing view
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def create_signed_document(request):
     if request.method == "POST":
         uploaded_file = request.FILES.get("document")
@@ -269,12 +282,13 @@ def create_signed_document(request):
 
 # Document download view
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def download_document(request, document_id):
     # Retrieve the document by its ID
     document = get_object_or_404(Document, id=document_id)
     
     # Get the document name from the document instance
-    document_name = document.document_name  # Assuming `document_name` is a field in your model
+    document_name = document.document_name
     
     # Return the document as an attachment with the document name as the filename
     return FileResponse(document.pdf_file, as_attachment=True, filename=f"{document_name}.pdf")
@@ -286,6 +300,7 @@ class DocumentPagination(PageNumberPagination):
     max_page_size = 100
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])
 def list_documents(request):
     documents = Document.objects.all()
     paginator = DocumentPagination()
@@ -302,18 +317,41 @@ def list_documents(request):
     return paginator.get_paginated_response(document_list)
 
 
-# Login view
+@api_view(['POST'])
 def login_view(request):
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        username = data.get('username')
-        password = data.get('password')
+    data = json.loads(request.body)
+    username = data.get('username')
+    password = data.get('password')
 
-        user = authenticate(request, username=username, password=password)
-        if user is not None:
-            login(request, user)
-            return JsonResponse({'message': 'Login successful'})
-        else:
-            return JsonResponse({'error': 'Invalid credentials'}, status=401)
+    # Authenticate the user
+    user = authenticate(request, username=username, password=password)
+    if user is not None:
+        # Generate JWT token
+        refresh = RefreshToken.for_user(user)
+        access_token = str(refresh.access_token)
 
-    return JsonResponse({'error': 'Invalid request'}, status=400)
+        return JsonResponse({
+            'message': 'Login successful',
+            'access_token': access_token,
+            'refresh_token': str(refresh)
+        })
+
+    return JsonResponse({'error': 'Invalid credentials'}, status=401)
+
+# User info view - protected route
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def user_info(request):
+    user = request.user
+    return JsonResponse({
+        'username': user.username,
+        'is_superuser': user.is_superuser,
+        'email': user.email,
+    })
+
+
+class LoginView(TokenObtainPairView):
+    permission_classes = (AllowAny,)
+
+class RefreshTokenView(TokenRefreshView):
+    permission_classes = (AllowAny,)
